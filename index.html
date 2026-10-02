@@ -622,6 +622,20 @@ const KB = [
 ];
 const SUGS_ES=["¿Puedes reducir desperdicio de material?","¿Qué haces con IA?","¿Das cursos de IA para renders?","¿Cómo empezamos?"];
 const SUGS_EN=["Can you reduce material waste?","What do you do with AI?","Do you teach AI for renders?","How do we start?"];
+
+/* Canonical answers for the four entry questions. These do not depend on the LLM. */
+const SUGGESTED_ANSWERS_ES={
+  "¿Puedes reducir desperdicio de material?":"Sí. He desarrollado herramientas de optimización para construcción que buscan aumentar el aprovechamiento del material. Un caso es un optimizador de cortes de acero de refuerzo usado en obra. En seis obras, con 4,877 t procesadas, el aprovechamiento estuvo entre 90% y 95%, con aproximadamente 92% de promedio ponderado. Aprovechamiento no equivale a ahorro. El mismo principio puede evaluarse para otros materiales si se conocen longitudes comerciales, piezas requeridas, tolerancias y restricciones de corte.",
+  "¿Qué haces con IA?":"Trabajo con IA aplicada al diseño, la personalización, la interacción humano-IA y el apoyo a decisiones. Mi experiencia incluye termostatos conectados, lógica difusa y modelos de lenguaje, experiencias inmersivas personalizadas, robótica social, gemelos digitales humanos y edificio-humano, manufactura y educación arquitectónica. Mi enfoque mantiene revisión humana y usa datos, reglas o simulación como evidencia explícita para apoyar decisiones.",
+  "¿Das cursos de IA para renders?":"Sí. Ofrezco capacitación en IA aplicada al proceso de diseño arquitectónico, incluida la generación y revisión crítica de imágenes y renders. La capacitación puede integrarse con diseño de futuros, desarrollo de prompts, iteración visual y criterios para evaluar resultados. La selección concreta de herramientas y modelos forma parte de mi metodología y se adapta al nivel, objetivos y flujo de trabajo del grupo.",
+  "¿Cómo empezamos?":"Cuéntame qué problema quieres resolver, qué proceso utilizas actualmente, qué datos o archivos tienes y qué resultado esperas. A partir de eso puedo identificar si conviene trabajar con IA, optimización, BIM, simulación energética, GIS, diseño computacional o una combinación. Para una propuesta formal puedes escribirme a isabelmendez@tec.mx."
+};
+const SUGGESTED_ANSWERS_EN={
+  "Can you reduce material waste?":"Yes. I have developed optimization tools for construction that aim to increase material utilization. One example is a reinforcing-steel cutting optimizer used on construction sites. Across six projects and 4,877 t processed, material utilization ranged from 90% to 95%, with an approximately 92% weighted average. Utilization is not the same as savings. The same principle can be evaluated for other materials when commercial lengths, required pieces, tolerances, and cutting constraints are known.",
+  "What do you do with AI?":"I work with AI applied to design, personalization, human-AI interaction, and decision support. My experience includes connected thermostats, fuzzy logic and language models, personalized immersive experiences, social robotics, human and building-human digital twins, manufacturing, and architectural education. My approach keeps humans in the loop and uses data, rules, or simulation as explicit evidence for decisions.",
+  "Do you teach AI for renders?":"Yes. I offer training in AI applied to the architectural design process, including the generation and critical review of images and renders. Training can integrate futures design, prompt development, visual iteration, and criteria for evaluating outputs. The specific selection of tools and models is part of my methodology and is adapted to the group's level, goals, and workflow.",
+  "How do we start?":"Tell me what problem you want to solve, what process you currently use, what data or files you have, and what outcome you expect. From there I can identify whether AI, optimization, BIM, energy simulation, GIS, computational design, or a combination is appropriate. For a formal proposal, write to isabelmendez@tec.mx."
+};
 const KB_EN={
   "Perfil profesional": {"s":"Professional profile","k":"who are you background education experience profile research","a":"I am an architect, an electronic design engineer, hold a master's degree in energy management and a PhD in Engineering Sciences. I am a Research Professor at Tecnológico de Monterrey, Monterrey Campus. My work connects computational design, building performance and human-AI interaction."},
   "Personalización y sistemas adaptativos": {"s":"Personalization and adaptive systems","k":"personalization adaptive user behavior preferences tailored tailoring","a":"Yes. Personalization has been a cross-cutting line of my work since my doctorate. I have applied it to connected thermostats and smart homes through gamification, fuzzy logic and user modeling, and later to immersive experiences, social robotics and adaptive systems. It now also connects to my work on human-AI interaction and human digital twins."},
@@ -662,15 +676,33 @@ function add(text,who,src){const d=document.createElement('div');d.className='ms
 const chatHist=[];
 async function ask(q){
   if(!q.trim())return;
-  add(q,'me'); chatHist.push({role:'user',content:q});
+  const clean=q.trim();
+  add(clean,'me'); chatHist.push({role:'user',content:clean});
+
+  // The four visible entry questions are canonical and deterministic.
+  const canonical=(LANG==='en'?SUGGESTED_ANSWERS_EN:SUGGESTED_ANSWERS_ES)[clean];
+  if(canonical){
+    add(canonical,'bot',LANG==='en'?'Verified profile':'Perfil verificado');
+    chatHist.push({role:'assistant',content:canonical});
+    return;
+  }
+
+  // Free questions use the LLM. If the Worker cannot ground the answer,
+  // the local knowledge base is used automatically.
   if(ASSISTANT_ENDPOINT){
     try{
       const r=await fetch(ASSISTANT_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHist.slice(-8)})});
       if(!r.ok) throw new Error(r.status);
-      const j=await r.json(); add(j.answer,'bot',LANG==='en'?'AI assistant':'Asistente con IA'); chatHist.push({role:'assistant',content:j.answer}); return;
-    }catch(e){/* fall through to local */}
+      const j=await r.json();
+      if(j && !j.use_fallback && typeof j.answer==='string' && j.answer.trim()){
+        const answer=j.answer.trim();
+        add(answer,'bot',LANG==='en'?'AI assistant':'Asistente con IA');
+        chatHist.push({role:'assistant',content:answer});
+        return;
+      }
+    }catch(e){/* use local fallback */}
   }
-  const res=localAnswer(q); add(res.a,'bot',res.s); chatHist.push({role:'assistant',content:res.a});
+  const res=localAnswer(clean); add(res.a,'bot',res.s); chatHist.push({role:'assistant',content:res.a});
 }
 document.getElementById('askForm').addEventListener('submit',e=>{e.preventDefault();const i=document.getElementById('q');ask(i.value);i.value=''});
 const sg=document.getElementById('sugs');
